@@ -45,17 +45,20 @@ def match(img, template, method, w, h):
 
 def max_scaled_math(img, template, max_downscale, max_steps, method):
     w, h = template[1].shape[::-1]
-    step = (1 - max_downscale) / max_steps
+    step = (1 - max_downscale) / (max_steps - 1)
     scale = 1
     best = (0, 0, 0, 1)
-    max = 0
     for n in range(1, max_steps):
         copy = cv2.resize(img, None, fx=scale, fy=scale)
         t, b, m = match(copy, template, method, w, h)
-        if m > max:
+        if m > best[2]:
             best = (t, b, m, scale)
-        scale = scale-step
+        scale = scale - step
     return best
+
+
+def scale_coord(coord, scale):
+    return tuple(round(c / scale) for c in coord)
 
 
 def match_and_draw(img, templates):
@@ -67,11 +70,11 @@ def match_and_draw(img, templates):
             meth_name = meth['name']
             method = eval(meth_name)
 
-            top_left, bottom_right, max = match(img, template, method, w, h)
+            top_left, bottom_right, max_match, scale = max_scaled_math(img, template, 0.25, 8, method)
 
-            if max > 0.52:
-                rect(img, top_left, bottom_right, meth['color'],
-                     ['{path} [{max:.3f}]'.format(path=path, max=max), meth_name[7:]])
+            if max_match > 0.52:
+                rect(img, scale_coord(top_left, scale), scale_coord(bottom_right , scale), meth['color'],
+                     ['{path} [{max:.3f}] x{scale:.2f}'.format(path=path, max=max_match, scale=scale), meth_name[7:]])
 
 
 template_paths = [r'me2.png']
