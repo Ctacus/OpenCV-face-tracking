@@ -37,20 +37,29 @@ def get_boundaries(match_res, method, w, h):
     return top_left, bottom_right, max_val
 
 
-def match(img, template, method, w, h):
+def match(img, template, method, w, h, show_plot=False):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     res = cv2.matchTemplate(gray, template[1], method)
+
+    if show_plot:
+        plt.subplot(121), plt.imshow(res, cmap='gray')
+        plt.title('Matching Result'), plt.xticks([]), plt.yticks([])
+        plt.subplot(122), plt.imshow(img, cmap='gray')
+        plt.title('Detected Point'), plt.xticks([]), plt.yticks([])
+        plt.suptitle(method)
+
+        plt.show()
     return get_boundaries(res, method, w, h)
 
 
-def max_scaled_math(img, template, max_downscale, max_steps, method):
+def max_scaled_math(img, template, max_downscale, max_steps, method, show_plot):
     w, h = template[1].shape[::-1]
     step = (1 - max_downscale) / (max_steps - 1)
     scale = 1
     best = (0, 0, 0, 1)
     for n in range(1, max_steps):
         copy = cv2.resize(img, None, fx=scale, fy=scale)
-        t, b, m = match(copy, template, method, w, h)
+        t, b, m = match(copy, template, method, w, h, show_plot)
         if m > best[2]:
             best = (t, b, m, scale)
         scale = scale - step
@@ -61,7 +70,7 @@ def scale_coord(coord, scale):
     return tuple(round(c / scale) for c in coord)
 
 
-def match_and_draw(img, templates):
+def match_and_draw(img, templates, show_plot):
     for template in templates:
         w, h = template[1].shape[::-1]
         path = template[0]
@@ -70,10 +79,10 @@ def match_and_draw(img, templates):
             meth_name = meth['name']
             method = eval(meth_name)
 
-            top_left, bottom_right, max_match, scale = max_scaled_math(img, template, 0.25, 8, method)
+            top_left, bottom_right, max_match, scale = max_scaled_math(img, template, 0.25, 8, method, show_plot)
 
             if max_match > 0.52:
-                rect(img, scale_coord(top_left, scale), scale_coord(bottom_right , scale), meth['color'],
+                rect(img, scale_coord(top_left, scale), scale_coord(bottom_right, scale), meth['color'],
                      ['{path} [{max:.3f}] x{scale:.2f}'.format(path=path, max=max_match, scale=scale), meth_name[7:]])
 
 
@@ -84,7 +93,13 @@ cap = cv2.VideoCapture(0)
 
 f = 0
 rot = 0
-while (True):
+cnd = True
+plot = False
+last_frame = None
+step = 1
+max_buff = 30
+buff = []
+while cnd:
     # Capture frame-by-frame
     ret, frame = cap.read()
 
@@ -95,15 +110,35 @@ while (True):
     # b, g, r = cv2.split(frame)
     # c = random.choice(range(5))
     # frame[:, :, 2] = 0
-    f = f + 1
-    if f % 40 == 0:
-        rot = (rot + 1) % 4
 
-    # frame = np.rot90(frame, -rot)
-    match_and_draw(frame, templates)
+
+
+
+
+        # TODO: добавить циклический буфер кадров
+    if len(buff) >= step and f >= step:
+        diff = cv2.subtract(frame, buff[(f - step) % max_buff])
+        cv2.putText(diff, '{}'.format(step), (10, 25), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 1, (50, 50, 200), 2)
+        cv2.imshow('diff', diff)
+    if f < max_buff:
+        buff.append(frame)
+    else:
+        buff[f % max_buff] = frame
+    f = f + 1
+    # match_and_draw(frame, templates, plot)
     cv2.imshow('frame', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+
+    # cnd = False
+    key = cv2.waitKey(3) & 0xFF
+
+    if key == ord('q'):
         break
+    # plot = cv2.waitKey(1) & 0xFF == ord('p') and not plot
+
+    elif key == ord('+'):
+        step = min(max_buff, step + 1)
+    elif key == ord('-'):
+        step = max(1, step - 1)
 
 # When everything done, release the capture
 cap.release()
