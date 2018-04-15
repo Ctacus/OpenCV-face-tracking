@@ -58,6 +58,7 @@ def max_scaled_math(img, template, max_downscale, max_steps, method, show_plot):
     scale = 1
     best = (0, 0, 0, 1)
     for n in range(1, max_steps):
+        # TODO: сделать масштабирование по одному разу для каждого кадра
         copy = cv2.resize(img, None, fx=scale, fy=scale)
         t, b, m = match(copy, template, method, w, h, show_plot)
         if m > best[2]:
@@ -71,6 +72,7 @@ def scale_coord(coord, scale):
 
 
 def match_and_draw(img, templates, show_plot):
+    scale = None
     for template in templates:
         w, h = template[1].shape[::-1]
         path = template[0]
@@ -78,15 +80,16 @@ def match_and_draw(img, templates, show_plot):
             # copy = img.copy()
             meth_name = meth['name']
             method = eval(meth_name)
-
-            top_left, bottom_right, max_match, scale = max_scaled_math(img, template, 0.25, 8, method, show_plot)
-
-            if max_match > 0.52:
+            if scale is None:
+                top_left, bottom_right, max_match, scale = max_scaled_math(img, template, 0.25, 8, method, show_plot)
+            else:
+                top_left, bottom_right, max_match = match(cv2.resize(img, None,  fx=scale, fy=scale), template, method, w, h, show_plot)
+            if max_match > 0.53:
                 rect(img, scale_coord(top_left, scale), scale_coord(bottom_right, scale), meth['color'],
                      ['{path} [{max:.3f}] x{scale:.2f}'.format(path=path, max=max_match, scale=scale), meth_name[7:]])
 
-
-template_paths = [r'me2.png']
+# первый шаблон - главный объект, все последующие - его части
+template_paths = [r'me2.png', r'imgs/smile.png']
 templates = [(path, cv2.imread(path, 0)) for path in template_paths]
 
 cap = cv2.VideoCapture(0)
@@ -99,6 +102,7 @@ last_frame = None
 step = 1
 max_buff = 30
 buff = []
+shadow = False
 while cnd:
     # Capture frame-by-frame
     ret, frame = cap.read()
@@ -111,21 +115,18 @@ while cnd:
     # c = random.choice(range(5))
     # frame[:, :, 2] = 0
 
-
-
-
-
-        # TODO: добавить циклический буфер кадров
-    if len(buff) >= step and f >= step:
-        diff = cv2.subtract(frame, buff[(f - step) % max_buff])
-        cv2.putText(diff, '{}'.format(step), (10, 25), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 1, (50, 50, 200), 2)
-        cv2.imshow('diff', diff)
-    if f < max_buff:
-        buff.append(frame)
-    else:
-        buff[f % max_buff] = frame
+    if shadow:
+        frame_copy = frame.copy()
+        if len(buff) >= step and f >= step:
+            diff = cv2.subtract(frame_copy, buff[(f - step) % max_buff])
+            cv2.putText(diff, '{}'.format(step), (10, 25), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 1, (50, 50, 200), 2)
+            cv2.imshow('diff', diff)
+        if f < max_buff:
+            buff.append(frame_copy)
+        else:
+            buff[f % max_buff] = frame_copy
     f = f + 1
-    # match_and_draw(frame, templates, plot)
+    match_and_draw(frame, templates, plot)
     cv2.imshow('frame', frame)
 
     # cnd = False
@@ -139,7 +140,14 @@ while cnd:
         step = min(max_buff, step + 1)
     elif key == ord('-'):
         step = max(1, step - 1)
+    elif key == ord('s'):
+        f = 0
+        shadow = not shadow
 
 # When everything done, release the capture
 cap.release()
 cv2.destroyAllWindows()
+
+
+#TODO: 1. выделение границ движущихся объектов
+#TODO: 2. улучшить производительности при работе с большим количеством шаблонов
